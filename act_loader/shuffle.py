@@ -1,20 +1,19 @@
-import itertools
 import math
-import os
 import tempfile
 
 import datasets
+import h5py
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from transformer_lens import HookedTransformer
-import numpy as np
-import h5py
 
-from act_loader.utils import k_bins, TORCH_DTYPES, NP_DTYPES
 from act_loader.mmap_tensor import MemoryMappedTensor
+from act_loader.utils import k_bins, TORCH_DTYPES
 
 
+@torch.no_grad()
 def tl_generate_acts(
     model: str,
     dataset_name: str,
@@ -54,6 +53,9 @@ def tl_generate_acts(
     final_layer = max(layers)
     act_names = [f"blocks.{l}.{s}" for l in layers for s in sites]
 
+    # while True:
+    #     yield torch.rand(len(layers), len(sites), 768, dtype=TORCH_DTYPES[dtype])
+
     for batch in DataLoader(
         dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=8
     ):
@@ -61,11 +63,15 @@ def tl_generate_acts(
             batch, stop_at_layer=final_layer + 1, names_filter=act_names
         )
 
+        del out
+
         acts = torch.stack(
             [  # [n_layers, n_sites, batch_size, seq_len, d_model]
                 torch.stack([cache[f"blocks.{l}.{s}"] for s in sites]) for l in layers
             ]
         )
+
+        del cache
 
         acts = acts.permute(
             2, 3, 0, 1, 4
@@ -103,26 +109,15 @@ def shuffle_acts(
     k = k_bins(n_tokens, m, p_overflow)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        bins = [
-            MemoryMappedTensor(os.path.join(tmp_dir, f"acts_{i}.pt"), m, shape, dtype)
-            for i in range(k)
-        ]
+        bins = [MemoryMappedTensor(tmp_dir, m, shape, dtype) for i in range(k)]
 
         print(f"Splitting activations into {k} bins...")
 
-        generator = np.random.Generator(np.random.PCG64(seed))
-        for _ in tqdm(range(n_tokens)):
+        rng = np.random.Generator(np.random.PCG64(seed))
+
+        for i in tqdm(range(n_tokens)):
             acts = next(act_generator)
-            bins[generator.integers(k)].append(acts)
-            del acts
-
-        print(f"Shuffled activations into {k} bins")
-        print(f"Shuffling bins...")
-
-        for t in tqdm(bins):
-            t.shuffle_data(generator)
-
-        print("Done shuffling")
+            bins[rng.integers(k)].append(acts)
 
         with h5py.File(f"{out_name}.h5", "w") as f:
             for l in layers:
@@ -133,6 +128,8 @@ def shuffle_acts(
             curr_len = 0
             for i, bin in enumerate(bins):
                 data = bin.get_data()
+                rng.shuffle(data)
+
                 for j, l in enumerate(layers):
                     for k, s in enumerate(sites):
                         f[f"layer_{l}"][s][curr_len : curr_len + data.shape[0]] = data[
@@ -141,6 +138,7 @@ def shuffle_acts(
 
                 curr_len += data.shape[0]
                 bin.close()
+                del data
 
             print(f"Saved shuffled activations to {out_name}.h5")
 

@@ -1,5 +1,5 @@
 from random import random
-from math import sqrt, log, exp
+from math import sqrt, log, exp, ceil
 
 import numpy as np
 import torch
@@ -48,7 +48,7 @@ def k_bins(n, max_mem, p_overflow=1e-12):
     if n <= max_mem:
         return 1
 
-    k = int(n // max_mem)
+    k = ceil(n / max_mem)
     while p(max_mem, n, k) > p_overflow:
         k += 1
     return k

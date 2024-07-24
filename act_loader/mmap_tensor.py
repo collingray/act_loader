@@ -1,5 +1,8 @@
 import math
+import mmap
 import os
+import random
+import uuid
 
 import torch
 import numpy as np
@@ -8,22 +11,26 @@ from act_loader.utils import NP_DTYPES
 
 
 class MemoryMappedTensor:
-    def __init__(self, path, length, tensor_shape, dtype):
+    def __init__(self, dir, length, tensor_shape, dtype):
         self.tensor_shape = tensor_shape
-        self.tensor_size = math.prod(tensor_shape)
-        self.length = length
+        self.tensor_size = math.prod(tensor_shape) * NP_DTYPES[dtype]().itemsize
+        self.dtype = dtype
+        self.max_length = length
+        self.page_size = os.sysconf("SC_PAGE_SIZE")
 
-        total_size = length * self.tensor_size
+        self.size = self.max_length * self.tensor_size
 
-        # Create the file if it doesn't exist
-        if not os.path.exists(path):
-            empty_data = np.zeros(total_size, dtype=NP_DTYPES[dtype])
-            empty_data.tofile(path)
+        self.path = os.path.join(dir, f"{uuid.uuid4()}.bin")
+        with open(self.path, "wb") as f:
+            f.seek(self.size - 1)
+            f.write(b"\0")
 
-        # Open the file in memory-map mode
-        self.data = np.memmap(
-            path, dtype=NP_DTYPES[dtype], mode="r+", shape=(total_size,)
+        self.file = open(self.path, "r+b")
+        self.mmap = mmap.mmap(
+            self.file.fileno(), length=0, access=mmap.ACCESS_WRITE, offset=0
         )
+
+        self.mmap.madvise(mmap.MADV_SEQUENTIAL)
 
         # Write head location
         self.pointer = 0
@@ -40,84 +47,67 @@ class MemoryMappedTensor:
             )
 
         # Ensure the tensor will fit
-        if self.pointer >= self.length:
+        if self.pointer >= self.max_length:
             raise IndexError("Memory-mapped tensor is full")
 
-        # Calculate the start and end indices for this tensor
-        start = self.pointer * self.tensor_size
-        end = start + self.tensor_size * tensor.shape[0]
+        # start = self.pointer * self.tensor_size
+        bytes = tensor.cpu().numpy().tobytes()
 
-        # Write the tensor data to the file
-        self.data[start:end] = tensor.cpu().flatten()
+        # if start % self.page_size != 0:
+        #     i = min(self.page_size - (start % self.page_size), len(bytes))
+        #     self.mmap[start : start + i] = bytes[:i]
+        #     bytes = bytes[i:]
+        #     start += i
 
-        # Flush to ensure data is written to disk
-        self.data.flush()
+        # if start % self.page_size == 0:
+        #     self.mmap.flush()
+
+        # for i in range(0, len(bytes), self.page_size):
+        #     j = min(self.page_size, len(bytes) - i)
+        #     self.mmap[start + i : start + i + j] = bytes[i : i + j]
+        #     self.mmap.flush()
+        #
+        # self.mmap.
+
+        self.mmap.write(bytes)
+        self.mmap.flush()
+        del bytes
+
+        # self.mmap.madvise(mmap.MADV_DONTNEED, 0, len(self.mmap))
+
+        # MAdvise DONTNEED on all pages just written
+        # start = self.pointer * self.tensor_size
+        # start_page = start // self.page_size
+        # end_page = (start + len(bytes)) // self.page_size
+        #
+        # if start_page != end_page:  # Only call if we crossed a page boundary
+        # self.mmap.madvise(
+        #     mmap.MADV_DONTNEED,
+        #     0,
+        #     (len(self.mmap) // self.page_size) * self.page_size,
+        # )
 
         # Increment the write head
-        self.pointer += tensor.shape[0]
+        # self.pointer += tensor.shape[0]
 
-    def read(self, idx):
-        if idx >= self.pointer:
-            raise IndexError("Tensor index out of range")
-
-        # Calculate the start and end indices for this tensor
-        start = idx * self.tensor_size
-        end = start + self.tensor_size
-
-        # Read the tensor data from the file
-        tensor_data = self.data[start:end]
-
-        # Reshape and convert to PyTorch tensor
-        return torch.from_numpy(tensor_data.reshape(self.tensor_shape))
-
-    def read_batch(self, start, end):
-        if start > self.pointer:
-            raise IndexError("Batch start index out of range")
-
-        # Calculate the start and end indices for this batch
-        start = start * self.tensor_size
-        end = end * self.tensor_size
-
-        # Clip the end index to the current length, otherwise the batch will be padded with zeros
-        end = min(end, self.pointer * self.tensor_size)
-
-        # Read the tensor data from the file
-        tensor_data = self.data[start:end]
-
-        # Reshape and convert to PyTorch tensor
-        return torch.from_numpy(tensor_data.reshape(-1, *self.tensor_shape))
+        # self.data._mmap.madvise(mmap.MADV_DONTNEED, 0, end * self.data.itemsize)
 
     def get_data(self):
-        return self.data[: self.pointer * self.tensor_size].reshape(
-            (-1, *self.tensor_shape)
+        self.mmap.flush()  # Ensure all data is written to disk
+
+        return (
+            np.frombuffer(
+                self.mmap[: self.pointer * self.tensor_size],
+                dtype=NP_DTYPES[self.dtype],
+            )
+            .reshape((-1, *self.tensor_shape))
+            .copy()
         )
-
-    def shuffle_data(self, generator=None):
-        if generator is None:
-            generator = np.random.Generator(np.random.PCG64())
-
-        reshaped = self.data[: self.pointer * self.tensor_size].reshape(
-            (-1, *self.tensor_shape)
-        )
-        generator.shuffle(reshaped)
-        self.data[: self.pointer * self.tensor_size] = reshaped.flatten()
-
-    def __getitem__(self, idx):
-        if isinstance(idx, slice):
-            return self.read_batch(idx.start, idx.stop)
-        else:
-            return self.read(idx)
 
     def __len__(self):
-        return self.pointer
-
-    def __iter__(self):
-        for i in range(self.pointer):
-            yield self.read(i)
-
-    def batch_iter(self, batch_size):
-        for i in range(0, self.pointer, batch_size):
-            yield self.read_batch(i, i + batch_size)
+        return len(self.mmap)
 
     def close(self):
-        del self.data
+        self.mmap.close()
+        self.file.close()
+        os.remove(self.path)
