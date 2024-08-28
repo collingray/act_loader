@@ -35,6 +35,9 @@ class MemoryMappedTensor:
         # Write head location
         self.pointer = 0
 
+        # Bytes of data written but not yet flushed
+        self.unflushed = 0
+
     def append(self, tensor):
         # Add a batch dimension if missing
         if tensor.dim() != len(self.tensor_shape) + 1:
@@ -51,7 +54,7 @@ class MemoryMappedTensor:
             raise IndexError("Memory-mapped tensor is full")
 
         # start = self.pointer * self.tensor_size
-        bytes = tensor.cpu().numpy().tobytes()
+        data = tensor.cpu().numpy().tobytes()
 
         # if start % self.page_size != 0:
         #     i = min(self.page_size - (start % self.page_size), len(bytes))
@@ -69,9 +72,15 @@ class MemoryMappedTensor:
         #
         # self.mmap.
 
-        self.mmap.write(bytes)
-        self.mmap.flush()
-        del bytes
+        if self.unflushed + len(data) > self.page_size:
+            self.mmap.write(data[: self.page_size - self.unflushed])
+            data = data[self.page_size - self.unflushed :]
+            self.mmap.flush()
+            self.unflushed = 0
+
+        self.mmap.write(data)
+        self.unflushed += len(data)
+        del data
 
         # self.mmap.madvise(mmap.MADV_DONTNEED, 0, len(self.mmap))
 
@@ -93,7 +102,9 @@ class MemoryMappedTensor:
         # self.data._mmap.madvise(mmap.MADV_DONTNEED, 0, end * self.data.itemsize)
 
     def get_data(self):
-        self.mmap.flush()  # Ensure all data is written to disk
+        # Ensure all data is written to disk
+        if self.unflushed > 0:
+            self.mmap.flush()
 
         return (
             np.frombuffer(
@@ -108,6 +119,7 @@ class MemoryMappedTensor:
         return self.mmap.tell()
 
     def close(self):
+        self.mmap.flush()
         self.mmap.close()
         self.file.close()
         os.remove(self.path)

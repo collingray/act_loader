@@ -70,7 +70,7 @@ def tl_generate_acts(
         dataset, batch_size=model_batch, shuffle=True, pin_memory=True, num_workers=8
     ):
         out, cache = model.run_with_cache(
-            batch["text"], stop_at_layer=final_layer + 1, names_filter=act_names
+            batch, stop_at_layer=final_layer + 1, names_filter=act_names
         )
 
         del out
@@ -177,27 +177,30 @@ def shuffle_acts(
         resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, hard_limit))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     n_tokens = int(2e9)
     layers = [1, 2, 3]
-    sites = ['hook_mlp_out', 'hook_attn_out']
+    sites = ["hook_mlp_out", "hook_attn_out"]
     d_mlp = 768
-    dtype = 'float16'
+    dtype = "float16"
     max_bytes = 32 * (1024**3)  # 32 GiB
     shape = (len(layers), len(sites), d_mlp)
     p_overflow = 1e-12
 
-    model_name = 'gpt2'
-    dataset_name = 'imdb'
-    dataset_split = 'train'
+    model_name = "gpt2"
+    dataset_name = "wikitext"
+    dataset_config = "wikitext-103-v1"
+    dataset_split = "train"
 
     model_batch = 1
     act_batch = 1
-    device = 'cuda'
+    device = "cuda"
 
-    dir = '.'
+    dir = "."
 
-    dataset = datasets.load_dataset(dataset_name)[dataset_split]["text"]
+    dataset = datasets.load_dataset(dataset_name, dataset_config, split=dataset_split)[
+        "text"
+    ]
 
     gen = tl_generate_acts(
         model_name,
