@@ -1,0 +1,8 @@
+datasets
+h5py
+numpy
+pandas
+setuptools
+torch
+tqdm
+transformer_lens
