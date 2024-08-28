@@ -5,7 +5,7 @@ from tqdm.autonotebook import tqdm
 from multiprocessing import Pool
 import gc
 
-from act_loader import utils
+import utils
 
 
 class ActBuffer:
@@ -36,6 +36,7 @@ class ActBuffer:
 
     A data buffer to store MLP activations for training the autoencoder.
     """
+
     def __init__(
         self,
         model,
@@ -55,11 +56,13 @@ class ActBuffer:
         buffer_device=None,
         offload_device=None,
         refresh_progress=False,
-        hf_model=None
+        hf_model=None,
     ):
 
         self.layers = layers
-        self.act_names = [f"blocks.{layer}.{act_site}" for layer in layers]  # the tl keys to grab activations from todo
+        self.act_names = [
+            f"blocks.{layer}.{act_site}" for layer in layers
+        ]  # the tl keys to grab activations from todo
         self.buffer_size = buffer_size
         self.min_capacity = min_capacity
         self.model_batch_size = model_batch_size
@@ -74,7 +77,9 @@ class ActBuffer:
         self.refresh_progress = refresh_progress
         self.final_layer = max(layers)  # the final layer that needs to be run
 
-        assert isinstance(layers, list) and len(layers) > 0, "layers must be a non-empty list of ints"
+        assert (
+            isinstance(layers, list) and len(layers) > 0
+        ), "layers must be a non-empty list of ints"
 
         if seed:
             torch.manual_seed(seed)
@@ -87,16 +92,13 @@ class ActBuffer:
             batch_size=model_batch_size,
             shuffle=True,
             pin_memory=True,
-            num_workers=8
+            num_workers=8,
         )
         self.data_generator = iter(self.data_loader)
 
         # load the model into a HookedTransformer
         self.model = HookedTransformer.from_pretrained_no_processing(
-            model_name=model,
-            hf_model=hf_model,
-            device=device,
-            dtype=dtype
+            model_name=model, hf_model=hf_model, device=device, dtype=dtype
         )
 
         # if the act_size is not provided, use the size from the model's cfg
@@ -106,7 +108,9 @@ class ActBuffer:
             elif act_site == "hook_mlp_out":
                 self.act_size = self.model.cfg.d_model
             else:
-                raise ValueError(f"Cannot determine act_size from act_site {act_site}, please provide it manually")
+                raise ValueError(
+                    f"Cannot determine act_size from act_site {act_site}, please provide it manually"
+                )
 
         # if the buffer is on the cpu, pin it to memory for faster transfer to the gpu
         pin_memory = buffer_device == "cpu"
@@ -116,7 +120,7 @@ class ActBuffer:
             (buffer_size, len(self.layers), act_size),
             dtype=dtype,
             pin_memory=pin_memory,
-            device=buffer_device
+            device=buffer_device,
         )
 
         # pointer to read/write location in the buffer, reset to 0 after refresh is called
@@ -159,11 +163,14 @@ class ActBuffer:
 
             if self.max_seq_length:
                 with Pool(8) as p:
-                    seqs = p.starmap(utils.truncate_seq, [(seq, self.max_seq_length) for seq in seqs])
+                    seqs = p.starmap(
+                        utils.truncate_seq, [(seq, self.max_seq_length) for seq in seqs]
+                    )
 
             # run the seqs through the model to get the activations
-            out, cache = self.model.run_with_cache(seqs, stop_at_layer=self.final_layer + 1,
-                                                   names_filter=self.act_names)
+            out, cache = self.model.run_with_cache(
+                seqs, stop_at_layer=self.final_layer + 1, names_filter=self.act_names
+            )
 
             # clean up logits in order to free the graph memory
             del out
@@ -173,14 +180,20 @@ class ActBuffer:
             acts = torch.stack([cache[name] for name in self.act_names], dim=-2)
             # (batch, pos, layers, act_size) -> (batch*samples_per_seq, layers, act_size)
             if self.samples_per_seq:
-                acts = acts[:, torch.randperm(acts.shape[-3])[:self.samples_per_seq]].flatten(0, 1)
+                acts = acts[
+                    :, torch.randperm(acts.shape[-3])[: self.samples_per_seq]
+                ].flatten(0, 1)
             else:
                 acts = acts.flatten(0, 1)
 
             write_pointer = self.buffer_size - self.buffer_pointer
 
-            new_acts = min(acts.shape[0], self.buffer_pointer)  # the number of acts to write, capped by buffer_pointer
-            self.buffer[write_pointer:write_pointer + acts.shape[0]].copy_(acts[:new_acts], non_blocking=True)
+            new_acts = min(
+                acts.shape[0], self.buffer_pointer
+            )  # the number of acts to write, capped by buffer_pointer
+            self.buffer[write_pointer : write_pointer + acts.shape[0]].copy_(
+                acts[:new_acts], non_blocking=True
+            )
             del acts
 
             # update the buffer pointer by the number of activations we just added
@@ -219,7 +232,7 @@ class ActBuffer:
         if batch is None:
             out = self.buffer[self.buffer_pointer]
         else:
-            out = self.buffer[self.buffer_pointer:self.buffer_pointer + batch]
+            out = self.buffer[self.buffer_pointer : self.buffer_pointer + batch]
 
         self.buffer_pointer += batch or 1
 
@@ -232,4 +245,6 @@ class ActBuffer:
         self.data_generator = iter(self.data_loader)
 
     def will_refresh(self, batch: int = None):
-        return self.buffer_size - (self.buffer_pointer + (batch or 1)) < self.min_capacity
+        return (
+            self.buffer_size - (self.buffer_pointer + (batch or 1)) < self.min_capacity
+        )

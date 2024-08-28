@@ -7,7 +7,7 @@ import uuid
 import torch
 import numpy as np
 
-from act_loader.utils import NP_DTYPES
+from utils import NP_DTYPES
 
 
 class MemoryMappedTensor:
@@ -97,7 +97,7 @@ class MemoryMappedTensor:
 
         return (
             np.frombuffer(
-                self.mmap[: self.pointer * self.tensor_size],
+                self.mmap[: self.mmap.tell()],
                 dtype=NP_DTYPES[self.dtype],
             )
             .reshape((-1, *self.tensor_shape))
@@ -105,7 +105,7 @@ class MemoryMappedTensor:
         )
 
     def __len__(self):
-        return len(self.mmap)
+        return self.mmap.tell()
 
     def close(self):
         self.mmap.close()
