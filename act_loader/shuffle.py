@@ -132,7 +132,7 @@ def shuffle_acts(
     print(f"n_tokens: {n_tokens}, # bins: {k}, bin size: {m}, p_overflow: {p_overflow}")
 
     try:
-        with tempfile.TemporaryDirectory(output_dir) as tmp_dir:
+        with tempfile.TemporaryDirectory(dir=output_dir) as tmp_dir:
             bins = [MemoryMappedTensor(tmp_dir, m, shape, dtype) for _ in range(k)]
 
             print(f"Splitting activations into {k} bins...")
