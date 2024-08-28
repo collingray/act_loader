@@ -103,7 +103,7 @@ def shuffle_acts(
     sites: str | list[str],
     n_dim: int,
     dtype: str,
-    output_file: str = "acts.h5",
+    output_dir: str = ".",
     p_overflow=1e-12,
     seed=None,
 ):
@@ -132,7 +132,7 @@ def shuffle_acts(
     print(f"n_tokens: {n_tokens}, # bins: {k}, bin size: {m}, p_overflow: {p_overflow}")
 
     try:
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        with tempfile.TemporaryDirectory(output_dir) as tmp_dir:
             bins = [MemoryMappedTensor(tmp_dir, m, shape, dtype) for _ in range(k)]
 
             print(f"Splitting activations into {k} bins...")
@@ -149,7 +149,7 @@ def shuffle_acts(
                 print(len(data))
                 print("~~~~~")
 
-            with h5py.File(output_file, "w") as f:
+            with h5py.File(f"{output_dir}/acts.h5", "w") as f:
                 for l in layers:
                     layer_group = f.create_group(f"layer_{l}")
                     for s in sites:
@@ -172,28 +172,30 @@ def shuffle_acts(
                     bin.close()
                     del data
 
-                print(f"Saved shuffled activations to {output_file}")
+                print(f"Saved shuffled activations to {output_dir}/acts.h5")
     finally:
         resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, hard_limit))
 
 
-if __name__ == "__main__":
-    n_tokens = 2e11
+if __name__ == '__main__':
+    n_tokens = int(2e9)
     layers = [1, 2, 3]
-    sites = ["hook_mlp_out", "hook_attn_out"]
+    sites = ['hook_mlp_out', 'hook_attn_out']
     d_mlp = 768
-    dtype = "float16"
+    dtype = 'float16'
     max_bytes = 32 * (1024**3)  # 32 GiB
     shape = (len(layers), len(sites), d_mlp)
     p_overflow = 1e-12
 
-    model_name = "gpt2"
-    dataset_name = "imdb"
-    dataset_split = "train"
+    model_name = 'gpt2'
+    dataset_name = 'imdb'
+    dataset_split = 'train'
 
     model_batch = 1
     act_batch = 1
-    device = "mps"
+    device = 'cuda'
+
+    dir = '.'
 
     dataset = datasets.load_dataset(dataset_name)[dataset_split]["text"]
 
@@ -211,7 +213,7 @@ if __name__ == "__main__":
     shuffle_acts(
         gen,
         n_tokens=n_tokens,
-        output_file="test.h5",
+        output_dir=dir,
         max_bytes=max_bytes,
         layers=layers,
         sites=sites,
