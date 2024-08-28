@@ -103,6 +103,7 @@ def shuffle_acts(
     sites: str | list[str],
     n_dim: int,
     dtype: str,
+    act_batch: int,
     output_dir: str = ".",
     p_overflow=1e-12,
     seed=None,
@@ -139,7 +140,7 @@ def shuffle_acts(
 
             rng = np.random.Generator(np.random.PCG64(seed))
 
-            for _ in tqdm(range(n_tokens)):
+            for _ in tqdm(range(0, n_tokens, act_batch)):
                 acts = next(act_generator)
                 bins[rng.integers(k)].append(acts)
 
@@ -192,8 +193,8 @@ if __name__ == "__main__":
     dataset_config = "wikitext-103-v1"
     dataset_split = "train"
 
-    model_batch = 1
-    act_batch = 1
+    model_batch = 16
+    act_batch = 512
     device = "cuda"
 
     dir = "."
@@ -216,11 +217,12 @@ if __name__ == "__main__":
     shuffle_acts(
         gen,
         n_tokens=n_tokens,
-        output_dir=dir,
         max_bytes=max_bytes,
         layers=layers,
         sites=sites,
         n_dim=d_mlp,
+        act_batch=act_batch,
+        output_dir=dir,
         p_overflow=p_overflow,
         dtype=dtype,
     )
