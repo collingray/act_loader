@@ -53,3 +53,14 @@ def k_bins(n, max_mem, p_overflow=1e-12):
     while p(max_mem, n, k) > p_overflow:
         k += 1
     return k
+
+
+def get_hugepage_size():
+    try:
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if line.startswith("Hugepagesize:"):
+                    return int(line.split()[1]) * 1024  # Convert KB to bytes
+    except FileNotFoundError:
+        pass  # Not a Linux system or /proc not available
+    return None  # Unable to determine hugepage size

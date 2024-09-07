@@ -1,6 +1,10 @@
 import math
+import mmap
+import random
 import tempfile
 import resource
+from dataclasses import dataclass
+from time import time_ns
 
 import datasets
 import h5py
@@ -95,6 +99,28 @@ def tl_generate_acts(
             act_buffer = act_buffer[act_batch:]
 
 
+@dataclass
+class FeatureFlags:
+    set_file_handle_limits: bool = True
+    log_bin_data: bool = True
+    log_final_bin_shapes: bool = True
+    log_info: bool = True
+    record_timing: bool = False
+    use_async_mmap: bool = True
+    use_madv_sequential: bool = True
+    use_madv_dontneed: bool = True
+    use_madv_hugepage: bool = True
+    use_map_private: bool = True
+    pages_per_flush: int = 128  # ignored when use_madv_hugepage is used
+
+    @property
+    def mmap_flags(self):
+        if self.use_map_private:
+            return mmap.MAP_PRIVATE
+        else:
+            return mmap.MAP_SHARED
+
+
 def shuffle_acts(
     act_generator,
     n_tokens,
@@ -107,8 +133,8 @@ def shuffle_acts(
     output_dir: str = ".",
     p_overflow=1e-12,
     seed=None,
+    fflags=FeatureFlags(),
 ):
-
     layers = [layers] if isinstance(layers, int) else layers
     sites = [sites] if isinstance(sites, str) else sites
 
@@ -120,35 +146,66 @@ def shuffle_acts(
     # Number of bins to split the activations into, with a `p_overflow` chance that at least one bin will grow larger than `m`
     k = k_bins(n_tokens, m, p_overflow)
 
-    soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if fflags.set_file_handle_limits:
+        soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
 
-    new_limit = soft_limit + k
-    if new_limit > hard_limit:
-        raise ValueError(
-            f"Number of bins ({k}) exceeds the file descriptor limit ({hard_limit})"
+        new_limit = soft_limit + k
+        if new_limit > hard_limit:
+            raise ValueError(
+                f"Number of bins ({k}) exceeds the file descriptor limit ({hard_limit})"
+            )
+
+        resource.setrlimit(resource.RLIMIT_NOFILE, (new_limit, hard_limit))
+
+    if fflags.log_bin_data:
+        print(
+            f"n_tokens: {n_tokens}, # bins: {k}, bin size: {m}, p_overflow: {p_overflow}"
         )
 
-    resource.setrlimit(resource.RLIMIT_NOFILE, (new_limit, hard_limit))
+    timing_data = {}
 
-    print(f"n_tokens: {n_tokens}, # bins: {k}, bin size: {m}, p_overflow: {p_overflow}")
+    if fflags.record_timing:
+        timing_data["act_gen"] = np.empty(0, dtype=np.int64)
+        timing_data["bin_append"] = np.empty(0, dtype=np.int64)
+        timing_data["bin_shuffle"] = np.empty(0, dtype=np.int64)
+        timing_data["bin_write"] = np.empty(0, dtype=np.int64)
 
     try:
         with tempfile.TemporaryDirectory(dir=output_dir) as tmp_dir:
-            bins = [MemoryMappedTensor(tmp_dir, m, shape, dtype) for _ in range(k)]
-
-            print(f"Splitting activations into {k} bins...")
+            bins = [
+                MemoryMappedTensor(tmp_dir, m, shape, dtype, fflags) for _ in range(k)
+            ]
 
             rng = np.random.Generator(np.random.PCG64(seed))
 
             for _ in tqdm(range(0, n_tokens, act_batch)):
-                acts = next(act_generator)
-                bins[rng.integers(k)].append(acts)
+                if fflags.record_timing and random.randint(0, 1000) == 0:
+                    start = time_ns()
 
-            for bin in bins:
-                data = bin.get_data()
-                print(data.shape)
-                print(len(data))
-                print("~~~~~")
+                    acts = next(act_generator)
+
+                    end = time_ns()
+                    timing_data["act_gen"] = np.append(
+                        timing_data["act_gen"], (end - start) // act_batch
+                    )
+                    start = time_ns()
+
+                    bins[rng.integers(k)].append(acts)
+
+                    end = time_ns()
+                    timing_data["bin_append"] = np.append(
+                        timing_data["bin_append"], (end - start) // act_batch
+                    )
+                else:
+                    acts = next(act_generator)
+                    bins[rng.integers(k)].append(acts)
+
+            if fflags.log_final_bin_shapes:
+                for bin in bins:
+                    data = bin.get_data()
+                    print(data.shape)
+                    print(len(data))
+                    print("~~~~~")
 
             with h5py.File(f"{output_dir}/acts.h5", "w") as f:
                 for l in layers:
@@ -161,7 +218,19 @@ def shuffle_acts(
                 curr_len = 0
                 for i, bin in enumerate(bins):
                     data = bin.get_data()
-                    rng.shuffle(data)
+
+                    record_timing = fflags.record_timing and random.randint(0, 10) == 0
+
+                    if record_timing:
+                        start = time_ns()
+                        rng.shuffle(data)
+                        end = time_ns()
+                        timing_data["bin_shuffle"] = np.append(
+                            timing_data["bin_shuffle"], end - start
+                        )
+                        start = time_ns()
+                    else:
+                        rng.shuffle(data)
 
                     for j, l in enumerate(layers):
                         for k, s in enumerate(sites):
@@ -169,13 +238,24 @@ def shuffle_acts(
                                 data[:, j, k]
                             )
 
+                    if record_timing:
+                        end = time_ns()
+                        timing_data["bin_write"] = np.append(
+                            timing_data["bin_write"], end - start
+                        )
+
                     curr_len += data.shape[0]
                     bin.close()
                     del data
 
-                print(f"Saved shuffled activations to {output_dir}/acts.h5")
+                if fflags.log_info:
+                    print(f"Saved shuffled activations to {output_dir}/acts.h5")
     finally:
-        resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, hard_limit))
+        if fflags.set_file_handle_limits:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, hard_limit))
+
+        if fflags.record_timing:
+            return timing_data
 
 
 if __name__ == "__main__":
@@ -185,7 +265,6 @@ if __name__ == "__main__":
     d_mlp = 768
     dtype = "float16"
     max_bytes = 32 * (1024**3)  # 32 GiB
-    shape = (len(layers), len(sites), d_mlp)
     p_overflow = 1e-12
 
     model_name = "gpt2"
@@ -197,7 +276,7 @@ if __name__ == "__main__":
     act_batch = 512
     device = "cuda"
 
-    dir = "."
+    output_dir = "."
 
     dataset = datasets.load_dataset(dataset_name, dataset_config, split=dataset_split)[
         "text"
@@ -222,7 +301,7 @@ if __name__ == "__main__":
         sites=sites,
         n_dim=d_mlp,
         act_batch=act_batch,
-        output_dir=dir,
+        output_dir=output_dir,
         p_overflow=p_overflow,
         dtype=dtype,
     )

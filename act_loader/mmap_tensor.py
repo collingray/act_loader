@@ -1,23 +1,29 @@
 import math
 import mmap
 import os
-import random
 import uuid
 
-import torch
 import numpy as np
 
-from utils import NP_DTYPES
+import async_mmap
+from shuffle import FeatureFlags
+from utils import NP_DTYPES, get_hugepage_size
 
 
 class MemoryMappedTensor:
-    def __init__(self, dir, length, tensor_shape, dtype):
+    def __init__(
+        self,
+        dir,
+        length,
+        tensor_shape,
+        dtype,
+        fflags: FeatureFlags,
+    ):
         self.tensor_shape = tensor_shape
         self.tensor_size = math.prod(tensor_shape) * NP_DTYPES[dtype]().itemsize
         self.dtype = dtype
         self.max_length = length
-        self.page_size = os.sysconf("SC_PAGE_SIZE")
-
+        self.page_size = mmap.PAGESIZE * fflags.pages_per_flush
         self.size = self.max_length * self.tensor_size
 
         self.path = os.path.join(dir, f"{uuid.uuid4()}.bin")
@@ -26,14 +32,40 @@ class MemoryMappedTensor:
             f.write(b"\0")
 
         self.file = open(self.path, "r+b")
-        self.mmap = mmap.mmap(
-            self.file.fileno(), length=0, access=mmap.ACCESS_WRITE, offset=0
-        )
 
-        self.mmap.madvise(mmap.MADV_SEQUENTIAL)
+        if fflags.use_async_mmap:
+            self.mmap = async_mmap.async_mmap(
+                self.file.fileno(),
+                length=0,
+                access=mmap.ACCESS_WRITE,
+                offset=0,
+                flags=fflags.mmap_flags,
+            )
+        else:
+            self.mmap = mmap.mmap(
+                self.file.fileno(),
+                length=0,
+                access=mmap.ACCESS_WRITE,
+                offset=0,
+                flags=fflags.mmap_flags,
+            )
 
-        # Write head location
-        self.pointer = 0
+        if fflags.use_madv_sequential:
+            self.mmap.madvise(mmap.MADV_SEQUENTIAL)
+
+        if fflags.use_madv_hugepage:
+            if hasattr(
+                mmap, "MADV_HUGEPAGE"
+            ):  # mmap.MADV_HUGEPAGE only exists if the current system supports huge pages
+                self.mmap.madvise(mmap.MADV_HUGEPAGE)
+                self.page_size = get_hugepage_size()
+            else:
+                print(
+                    "Warning: MADV_HUGEPAGE specified, but not supported on current architecture"
+                )
+
+        # We track this here to avoid reads from async_mmap
+        self.length = 0
 
         # Bytes of data written but not yet flushed
         self.unflushed = 0
@@ -49,28 +81,13 @@ class MemoryMappedTensor:
                 f"Tensor shape mismatch. Expected {self.tensor_shape}, got {tensor.shape}"
             )
 
-        # Ensure the tensor will fit
-        if self.pointer >= self.max_length:
-            raise IndexError("Memory-mapped tensor is full")
-
-        # start = self.pointer * self.tensor_size
         data = tensor.cpu().numpy().tobytes()
 
-        # if start % self.page_size != 0:
-        #     i = min(self.page_size - (start % self.page_size), len(bytes))
-        #     self.mmap[start : start + i] = bytes[:i]
-        #     bytes = bytes[i:]
-        #     start += i
+        self.length += len(data) // self.tensor_size
 
-        # if start % self.page_size == 0:
-        #     self.mmap.flush()
-
-        # for i in range(0, len(bytes), self.page_size):
-        #     j = min(self.page_size, len(bytes) - i)
-        #     self.mmap[start + i : start + i + j] = bytes[i : i + j]
-        #     self.mmap.flush()
-        #
-        # self.mmap.
+        # Ensure the tensor will fit
+        if self.length >= self.max_length:
+            raise IndexError("Memory-mapped tensor is full")
 
         if self.unflushed + len(data) > self.page_size:
             self.mmap.write(data[: self.page_size - self.unflushed])
@@ -80,7 +97,7 @@ class MemoryMappedTensor:
 
         self.mmap.write(data)
         self.unflushed += len(data)
-        del data
+        # del data
 
         # self.mmap.madvise(mmap.MADV_DONTNEED, 0, len(self.mmap))
 
@@ -116,7 +133,7 @@ class MemoryMappedTensor:
         )
 
     def __len__(self):
-        return self.mmap.tell()
+        return self.length
 
     def close(self):
         self.mmap.flush()
