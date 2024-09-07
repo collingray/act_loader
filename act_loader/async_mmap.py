@@ -54,7 +54,7 @@ class async_mmap:
         self.mmap.madvise(option, start, length)
 
 
-async def speed_test_async_mmap(filename, size, data):
+async def _speed_test_async_mmap(filename, size, data):
     with open(filename, "r+b") as f:
         mm = async_mmap(f.fileno(), size)
         start_time = time.time()
@@ -71,7 +71,7 @@ async def speed_test_async_mmap(filename, size, data):
     return end_time - start_time
 
 
-def speed_test_default_mmap(filename, size, data):
+def _speed_test_default_mmap(filename, size, data):
     with open(filename, "r+b") as f:
         mm = mmap.mmap(f.fileno(), size, access=mmap.ACCESS_WRITE)
         start_time = time.time()
@@ -88,7 +88,7 @@ def speed_test_default_mmap(filename, size, data):
     return end_time - start_time
 
 
-async def main():
+async def _run_speed_test():
     size = 500 * 1024 * 1024  # 500 MB
     data = os.urandom(size)  # Generate random data
 
@@ -103,11 +103,11 @@ async def main():
     print(f"Testing with {size / (1024 * 1024):.2f} MB of data")
 
     # Test async_mmap
-    async_time = await speed_test_async_mmap(async_filename, size, data)
+    async_time = await _speed_test_async_mmap(async_filename, size, data)
     print(f"async_mmap write time: {async_time:.4f} seconds")
 
     # Test mmap.mmap
-    default_time = speed_test_default_mmap(default_filename, size, data)
+    default_time = _speed_test_default_mmap(default_filename, size, data)
     print(f"Default mmap write time: {default_time:.4f} seconds")
 
     # Compare results
@@ -119,4 +119,5 @@ async def main():
     os.remove(default_filename)
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(_run_speed_test())
