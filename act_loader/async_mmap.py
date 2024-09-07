@@ -12,7 +12,8 @@ class async_mmap:
         self.executor = ThreadPoolExecutor()
         self.operation_queue = deque()
         self.lock = asyncio.Lock()
-        self.background_task = asyncio.create_task(self._process_operations())
+        self.loop = asyncio.get_event_loop()
+        self.background_task = self.loop.create_task(self._process_operations())
 
     def write(self, data, offset=0):
         self.operation_queue.append(("write", data, offset))
@@ -35,23 +36,22 @@ class async_mmap:
 
     async def _perform_write(self, data, offset):
         async with self.lock:
-            await asyncio.get_event_loop().run_in_executor(
+            await self.loop.run_in_executor(
                 self.executor, self.mmap.write, data, offset
             )
 
     async def _perform_flush(self):
         async with self.lock:
-            await asyncio.get_event_loop().run_in_executor(
-                self.executor, self.mmap.flush
-            )
+            await self.loop.run_in_executor(self.executor, self.mmap.flush)
 
     def close(self):
         self.background_task.cancel()  # Cancel the background task
         self.mmap.close()
+        self.loop.close()
         self.executor.shutdown()
 
-    def madvise(self, option, start: int = ..., length: int = ...):
-        self.mmap.madvise(option, start, length)
+    def madvise(self, option, **kwargs):
+        self.mmap.madvise(option, **kwargs)
 
 
 async def _speed_test_async_mmap(filename, size, data):

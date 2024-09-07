@@ -6,8 +6,7 @@ import uuid
 import numpy as np
 
 import async_mmap
-from shuffle import FeatureFlags
-from utils import NP_DTYPES, get_hugepage_size
+from utils import NP_DTYPES, get_hugepage_size, FeatureFlags
 
 
 class MemoryMappedTensor:
@@ -37,17 +36,17 @@ class MemoryMappedTensor:
             self.mmap = async_mmap.async_mmap(
                 self.file.fileno(),
                 length=0,
-                access=mmap.ACCESS_WRITE,
                 offset=0,
                 flags=fflags.mmap_flags,
+                prot=mmap.PROT_WRITE,
             )
         else:
             self.mmap = mmap.mmap(
                 self.file.fileno(),
                 length=0,
-                access=mmap.ACCESS_WRITE,
                 offset=0,
                 flags=fflags.mmap_flags,
+                prot=mmap.PROT_WRITE,
             )
 
         if fflags.use_madv_sequential:

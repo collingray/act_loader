@@ -1,9 +1,7 @@
 import math
-import mmap
 import random
-import tempfile
 import resource
-from dataclasses import dataclass
+import tempfile
 from time import time_ns
 
 import datasets
@@ -15,7 +13,7 @@ from tqdm.auto import tqdm
 from transformer_lens import HookedTransformer
 
 from mmap_tensor import MemoryMappedTensor
-from utils import k_bins, TORCH_DTYPES
+from utils import k_bins, TORCH_DTYPES, FeatureFlags
 
 
 @torch.no_grad()
@@ -97,28 +95,6 @@ def tl_generate_acts(
         while act_buffer.shape[0] >= act_batch:
             yield act_buffer[:act_batch]
             act_buffer = act_buffer[act_batch:]
-
-
-@dataclass
-class FeatureFlags:
-    set_file_handle_limits: bool = True
-    log_bin_data: bool = True
-    log_final_bin_shapes: bool = True
-    log_info: bool = True
-    record_timing: bool = False
-    use_async_mmap: bool = True
-    use_madv_sequential: bool = True
-    use_madv_dontneed: bool = True
-    use_madv_hugepage: bool = True
-    use_map_private: bool = True
-    pages_per_flush: int = 128  # ignored when use_madv_hugepage is used
-
-    @property
-    def mmap_flags(self):
-        if self.use_map_private:
-            return mmap.MAP_PRIVATE
-        else:
-            return mmap.MAP_SHARED
 
 
 def shuffle_acts(
@@ -274,7 +250,14 @@ if __name__ == "__main__":
 
     model_batch = 16
     act_batch = 512
-    device = "cuda"
+
+    device = "cpu"
+
+    if torch.backends.mps.is_available():
+        device = "mps"
+
+    if torch.cuda.is_available():
+        device = "cuda"
 
     output_dir = "."
 
