@@ -9,11 +9,11 @@ import h5py
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
+from tqdm.auto import trange
 from transformer_lens import HookedTransformer
 
 from mmap_tensor import MemoryMappedTensor
-from utils import k_bins, TORCH_DTYPES, FeatureFlags
+from utils import k_bins, TORCH_DTYPES, FeatureFlags, auto_device
 
 
 @torch.no_grad()
@@ -154,7 +154,7 @@ def shuffle_acts(
 
             rng = np.random.Generator(np.random.PCG64(seed))
 
-            for _ in tqdm(range(0, n_tokens, act_batch)):
+            for _ in trange(0, n_tokens, act_batch):
                 if fflags.record_timing and random.randint(0, 1000) == 0:
                     start = time_ns()
 
@@ -251,13 +251,7 @@ if __name__ == "__main__":
     model_batch = 16
     act_batch = 512
 
-    device = "cpu"
-
-    if torch.backends.mps.is_available():
-        device = "mps"
-
-    if torch.cuda.is_available():
-        device = "cuda"
+    device = auto_device()
 
     output_dir = "."
 

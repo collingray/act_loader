@@ -68,6 +68,16 @@ def get_hugepage_size():
     return None  # Unable to determine hugepage size
 
 
+def auto_device():
+    if torch.backends.mps.is_available():
+        return "mps"
+
+    if torch.cuda.is_available():
+        return "cuda"
+
+    return "cpu"
+
+
 @dataclass
 class FeatureFlags:
     set_file_handle_limits: bool = True
