@@ -6,7 +6,7 @@ import uuid
 import numpy as np
 
 import async_mmap
-from act_loader.fflags import FeatureFlags
+from fflags import FeatureFlags
 from utils import NP_DTYPES, get_hugepage_size
 
 
