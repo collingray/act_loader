@@ -48,6 +48,7 @@ def test_feature_flags():
     )
 
     flag_sets = [
+        ("all flags", FeatureFlags()),
         (
             "no flags",
             FeatureFlags(
@@ -57,7 +58,6 @@ def test_feature_flags():
                 use_map_private=False,
             ),
         ),
-        ("all flags", FeatureFlags()),
         ("w/o async mmap", FeatureFlags(use_async_mmap=False)),
         ("w/o MADV_SEQUENTIAL", FeatureFlags(use_madv_sequential=False)),
         ("w/o MADV_HUGEPAGE", FeatureFlags(use_madv_hugepage=False)),

@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from dotenv import load_dotenv
 from torch.utils.data import DataLoader
-from tqdm.auto import trange
+from tqdm.auto import tqdm
 from transformer_lens import HookedTransformer
 
 from mmap_tensor import MemoryMappedTensor
@@ -156,11 +156,14 @@ def shuffle_acts(
 
             rng = np.random.Generator(np.random.PCG64(seed))
 
-            for _ in trange(0, n_tokens, act_batch):
+            for t in tqdm(range(0, n_tokens, act_batch)):
                 if fflags.record_timing and random.randint(0, 1000) == 0:
                     start = time_ns()
 
                     acts = next(act_generator)
+
+                    if t + act_batch >= n_tokens:
+                        acts = acts[: n_tokens - t]
 
                     end = time_ns()
                     timing_data["act_gen"] = np.append(
@@ -176,6 +179,10 @@ def shuffle_acts(
                     )
                 else:
                     acts = next(act_generator)
+
+                    if t + act_batch >= n_tokens:
+                        acts = acts[: n_tokens - t]
+
                     bins[rng.integers(k)].append(acts)
 
             if fflags.log_final_bin_shapes:
