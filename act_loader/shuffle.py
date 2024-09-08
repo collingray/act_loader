@@ -1,4 +1,5 @@
 import math
+import os
 import random
 import resource
 import tempfile
@@ -8,6 +9,7 @@ import datasets
 import h5py
 import numpy as np
 import torch
+from dotenv import load_dotenv
 from torch.utils.data import DataLoader
 from tqdm.auto import trange
 from transformer_lens import HookedTransformer
@@ -235,6 +237,8 @@ def shuffle_acts(
 
 
 if __name__ == "__main__":
+    load_dotenv()
+
     n_tokens = int(2e9)
     layers = [1, 2, 3]
     sites = ["hook_mlp_out", "hook_attn_out"]
@@ -253,7 +257,7 @@ if __name__ == "__main__":
 
     device = auto_device()
 
-    output_dir = "."
+    output_dir = os.getenv("OUTPUT_DIR", ".")
 
     dataset = datasets.load_dataset(dataset_name, dataset_config, split=dataset_split)[
         "text"

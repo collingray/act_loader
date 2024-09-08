@@ -1,10 +1,14 @@
+import os
 from time import time
 
 import datasets
+from dotenv import load_dotenv
 
 from utils import FeatureFlags, auto_device
 from shuffle import tl_generate_acts, shuffle_acts
 
+
+load_dotenv()
 
 n_tokens = int(2e7)
 layers = [1]
@@ -19,7 +23,7 @@ dataset_name = "wikitext"
 dataset_config = "wikitext-103-v1"
 dataset_split = "train"
 
-output_dir = "."
+output_dir = os.getenv("OUTPUT_DIR", ".")
 
 dataset = datasets.load_dataset(dataset_name, dataset_config, split=dataset_split)[
     "text"
@@ -44,6 +48,15 @@ def test_feature_flags():
     )
 
     flag_sets = [
+        (
+            "no flags",
+            FeatureFlags(
+                use_async_mmap=False,
+                use_madv_sequential=False,
+                use_madv_hugepage=False,
+                use_map_private=False,
+            ),
+        ),
         ("all flags", FeatureFlags()),
         ("w/o async mmap", FeatureFlags(use_async_mmap=False)),
         ("w/o MADV_SEQUENTIAL", FeatureFlags(use_madv_sequential=False)),

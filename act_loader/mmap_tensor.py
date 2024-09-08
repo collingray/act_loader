@@ -39,6 +39,7 @@ class MemoryMappedTensor:
                 offset=0,
                 flags=fflags.mmap_flags,
                 prot=mmap.PROT_WRITE,
+                access=mmap.ACCESS_WRITE,
             )
         else:
             self.mmap = mmap.mmap(
@@ -47,6 +48,7 @@ class MemoryMappedTensor:
                 offset=0,
                 flags=fflags.mmap_flags,
                 prot=mmap.PROT_WRITE,
+                access=mmap.ACCESS_WRITE,
             )
 
         if fflags.use_madv_sequential:
@@ -96,7 +98,7 @@ class MemoryMappedTensor:
 
         self.mmap.write(data)
         self.unflushed += len(data)
-        # del data
+        del data
 
         # self.mmap.madvise(mmap.MADV_DONTNEED, 0, len(self.mmap))
 

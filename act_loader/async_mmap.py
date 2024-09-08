@@ -47,7 +47,6 @@ class async_mmap:
     def close(self):
         self.background_task.cancel()  # Cancel the background task
         self.mmap.close()
-        self.loop.close()
         self.executor.shutdown()
 
     def tell(self):
