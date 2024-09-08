@@ -4,7 +4,8 @@ from time import time
 import datasets
 from dotenv import load_dotenv
 
-from utils import FeatureFlags, auto_device
+from act_loader.fflags import FeatureFlags
+from utils import auto_device
 from shuffle import tl_generate_acts, shuffle_acts
 
 

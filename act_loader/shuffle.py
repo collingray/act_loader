@@ -14,8 +14,9 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from transformer_lens import HookedTransformer
 
+from act_loader.fflags import FeatureFlags
 from mmap_tensor import MemoryMappedTensor
-from utils import k_bins, TORCH_DTYPES, FeatureFlags, auto_device
+from utils import k_bins, TORCH_DTYPES, auto_device
 
 
 @torch.no_grad()

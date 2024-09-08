@@ -6,7 +6,8 @@ import uuid
 import numpy as np
 
 import async_mmap
-from utils import NP_DTYPES, get_hugepage_size, FeatureFlags
+from act_loader.fflags import FeatureFlags
+from utils import NP_DTYPES, get_hugepage_size
 
 
 class MemoryMappedTensor:
@@ -24,6 +25,7 @@ class MemoryMappedTensor:
         self.max_length = length
         self.page_size = mmap.PAGESIZE * fflags.pages_per_flush
         self.size = self.max_length * self.tensor_size
+        self.closed = False
 
         self.path = os.path.join(dir, f"{uuid.uuid4()}.bin")
         with open(self.path, "wb") as f:
@@ -137,7 +139,11 @@ class MemoryMappedTensor:
         return self.length
 
     def close(self):
+        if self.closed:
+            return
+
         self.mmap.flush()
         self.mmap.close()
         self.file.close()
         os.remove(self.path)
+        self.closed = True
