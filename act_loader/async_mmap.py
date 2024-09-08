@@ -50,6 +50,9 @@ class async_mmap:
         self.loop.close()
         self.executor.shutdown()
 
+    def tell(self):
+        return self.mmap.tell()
+
     def madvise(self, option, **kwargs):
         self.mmap.madvise(option, **kwargs)
 
