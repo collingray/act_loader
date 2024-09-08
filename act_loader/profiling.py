@@ -79,6 +79,7 @@ def test_feature_flags():
             output_dir=output_dir,
             p_overflow=p_overflow,
             dtype=dtype,
+            fflags=flags,
         )
         end = time()
         print(f"{name}: {end - start:.2f}s")

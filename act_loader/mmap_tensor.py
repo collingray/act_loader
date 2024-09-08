@@ -37,8 +37,8 @@ class MemoryMappedTensor:
                 self.file.fileno(),
                 length=0,
                 offset=0,
-                flags=fflags.mmap_flags,
-                prot=mmap.PROT_WRITE,
+                # flags=fflags.mmap_flags,
+                # prot=mmap.PROT_WRITE,
                 access=mmap.ACCESS_WRITE,
             )
         else:
@@ -46,8 +46,8 @@ class MemoryMappedTensor:
                 self.file.fileno(),
                 length=0,
                 offset=0,
-                flags=fflags.mmap_flags,
-                prot=mmap.PROT_WRITE,
+                # flags=fflags.mmap_flags,
+                # prot=mmap.PROT_WRITE,
                 access=mmap.ACCESS_WRITE,
             )
 

@@ -229,6 +229,9 @@ def shuffle_acts(
                 if fflags.log_info:
                     print(f"Saved shuffled activations to {output_dir}/acts.h5")
     finally:
+        for bin in bins:
+            bin.close()
+
         if fflags.set_file_handle_limits:
             resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, hard_limit))
 
