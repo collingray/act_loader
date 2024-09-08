@@ -56,6 +56,9 @@ class async_mmap:
     def madvise(self, option, **kwargs):
         self.mmap.madvise(option, **kwargs)
 
+    def __getitem__(self, item):
+        return self.mmap[item]
+
 
 async def _speed_test_async_mmap(filename, size, data):
     with open(filename, "r+b") as f:
