@@ -67,7 +67,7 @@ class MemoryMappedTensor:
                     "Warning: MADV_HUGEPAGE specified, but not supported on current architecture"
                 )
 
-        # We track this here to avoid reads from async_mmap
+        # We track this here to avoid reading from async_mmap
         self.length = 0
 
         # Bytes of data written but not yet flushed

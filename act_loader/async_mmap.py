@@ -1,127 +1,150 @@
 import asyncio
 import mmap
-from concurrent.futures import ThreadPoolExecutor
-from collections import deque
-import time
 import os
+import queue
+import tempfile
+import threading
+import time
+
+from dotenv import load_dotenv
+from tqdm import tqdm
 
 
 class async_mmap:
     def __init__(self, fileno, length, **kwargs):
         self.mmap = mmap.mmap(fileno, length, **kwargs)
-        self.executor = ThreadPoolExecutor()
-        self.operation_queue = deque()
-        self.lock = asyncio.Lock()
-        self.loop = asyncio.get_event_loop()
-        self.background_task = self.loop.create_task(self._process_operations())
+        self.write_queue = queue.Queue()
+        self.write_thread = threading.Thread(
+            target=self._background_writer, daemon=True
+        )
+        self.lock = threading.Lock()
+        self.write_thread.start()
+        self.closed = False
 
-    def write(self, data, offset=0):
-        self.operation_queue.append(("write", data, offset))
-        return len(data)
+    def _background_writer(self):
+        while True:
+            data = self.write_queue.get()
+
+            if data is None:
+                break
+
+            self.mmap.write(data)
+
+    def write(self, data):
+        with self.lock:
+            if self.closed:
+                raise ValueError("Cannot write to closed async_mmap")
+
+            self.write_queue.put(data)
 
     def flush(self):
-        self.operation_queue.append(("flush",))
-        return
-
-    async def _process_operations(self):
-        while True:
-            if self.operation_queue:
-                operation = self.operation_queue.popleft()
-                if operation[0] == "write":
-                    await self._perform_write(operation[1], operation[2])
-                elif operation[0] == "flush":
-                    await self._perform_flush()
-            else:
-                await asyncio.sleep(0.001)  # Small delay to prevent busy-waiting
-
-    async def _perform_write(self, data, offset):
-        async with self.lock:
-            await self.loop.run_in_executor(
-                self.executor, self.mmap.write, data, offset
-            )
-
-    async def _perform_flush(self):
-        async with self.lock:
-            await self.loop.run_in_executor(self.executor, self.mmap.flush)
+        with self.lock:
+            self.mmap.flush()
 
     def close(self):
-        self.background_task.cancel()  # Cancel the background task
-        self.mmap.close()
-        self.executor.shutdown()
+        with self.lock:
+            if not self.closed:
+                self.write_queue.put(None)  # Signal to stop the background thread
+                self.write_thread.join()
+                self.mmap.flush()
+                self.mmap.close()
+                self.closed = True
 
     def tell(self):
         return self.mmap.tell()
 
     def madvise(self, option, **kwargs):
-        self.mmap.madvise(option, **kwargs)
+        return self.mmap.madvise(option, **kwargs)
 
     def __getitem__(self, item):
         return self.mmap[item]
 
 
-async def _speed_test_async_mmap(filename, size, data):
-    with open(filename, "r+b") as f:
-        mm = async_mmap(f.fileno(), size)
-        start_time = time.time()
+def _speed_test_default_mmap(filename, size, data, delay=0.0):
+    file = open(filename, "r+b")
 
-        chunk_size = 1024 * 1024  # 1 MB chunks
-        for i in range(0, len(data), chunk_size):
-            chunk = data[i : i + chunk_size]
-            mm.write(chunk, i)
+    mm = mmap.mmap(file.fileno(), size, access=mmap.ACCESS_WRITE)
+    start_time = time.time()
 
-        mm.flush()
-        mm.close()
+    chunk_size = 1024 * 1024  # 1 MB chunks
+    for i in tqdm(range(0, len(data), chunk_size), desc="Writing data (default)"):
+        chunk = data[i : i + chunk_size]
+        mm.write(chunk)
+        time.sleep(delay)
 
-        end_time = time.time()
+    mm.flush()
+    mm.close()
+
+    end_time = time.time()
+
+    file.close()
+
     return end_time - start_time
 
 
-def _speed_test_default_mmap(filename, size, data):
-    with open(filename, "r+b") as f:
-        mm = mmap.mmap(f.fileno(), size, access=mmap.ACCESS_WRITE)
-        start_time = time.time()
+def _speed_test_async_mmap(filename, size, data, delay=0.0):
+    file = open(filename, "r+b")
 
-        chunk_size = 1024 * 1024  # 1 MB chunks
-        for i in range(0, len(data), chunk_size):
-            chunk = data[i : i + chunk_size]
-            mm.write(chunk)
+    mm = async_mmap(file.fileno(), size, access=mmap.ACCESS_WRITE)
+    start_time = time.time()
 
-        mm.flush()
-        mm.close()
+    chunk_size = 1024 * 1024  # 1 MB chunks
+    for i in tqdm(range(0, len(data), chunk_size), desc="Writing data (async)"):
+        chunk = data[i : i + chunk_size]
+        mm.write(chunk)
+        time.sleep(delay)
 
-        end_time = time.time()
+    mm.flush()
+    mm.close()
+
+    end_time = time.time()
+
+    file.close()
+
     return end_time - start_time
 
 
 async def _run_speed_test():
-    size = 500 * 1024 * 1024  # 500 MB
+    load_dotenv()
+
+    size = 1 * 1024 * 1024 * 1024  # 1 GiB
     data = os.urandom(size)  # Generate random data
 
-    async_filename = "async_test.bin"
-    default_filename = "default_test.bin"
+    output_dir = os.getenv("OUTPUT_DIR", ".")
 
-    for filename in [async_filename, default_filename]:
-        with open(filename, "wb") as f:
-            f.seek(size - 1)
-            f.write(b"\0")
+    with tempfile.TemporaryDirectory(dir=output_dir) as tmp_dir:
+        default_filename = os.path.join(tmp_dir, "default_test.bin")
+        async_filename = os.path.join(tmp_dir, "async_test.bin")
 
-    print(f"Testing with {size / (1024 * 1024):.2f} MB of data")
+        for filename in [default_filename, async_filename]:
+            with open(filename, "wb") as f:
+                f.seek(size - 1)
+                f.write(b"\0")
 
-    # Test async_mmap
-    async_time = await _speed_test_async_mmap(async_filename, size, data)
-    print(f"async_mmap write time: {async_time:.4f} seconds")
+        print(f"Testing with {size / (1024 * 1024 * 1024):.2f} GiB of data")
 
-    # Test mmap.mmap
-    default_time = _speed_test_default_mmap(default_filename, size, data)
-    print(f"Default mmap write time: {default_time:.4f} seconds")
+        for delay in [0.0, 0.01, 0.1]:
+            print(f"Testing with delay of {delay:.2f} seconds")
 
-    # Compare results
-    speedup = (default_time - async_time) / default_time * 100
-    print(f"async_mmap is {speedup:.2f}% faster than default mmap")
+            # Test mmap.mmap
+            default_time = _speed_test_default_mmap(default_filename, size, data, delay)
+            print(f"Default mmap write time: {default_time:.4f} seconds")
 
-    # Clean up test files
-    os.remove(async_filename)
-    os.remove(default_filename)
+            # Verify that the default file was written correctly
+            with open(default_filename, "rb") as f:
+                assert f.read() == data, "Default mmap did not write the correct data"
+
+            # Test async_mmap
+            async_time = _speed_test_async_mmap(async_filename, size, data, delay)
+            print(f"async_mmap write time: {async_time:.4f} seconds")
+
+            # Verify that the async file was written correctly
+            with open(async_filename, "rb") as f:
+                assert f.read() == data, "Async mmap did not write the correct data"
+
+            # Compare results
+            speedup = (default_time - async_time) / default_time * 100
+            print(f"async_mmap is {speedup:.2f}% faster than default mmap")
 
 
 if __name__ == "__main__":
