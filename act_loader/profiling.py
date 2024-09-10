@@ -60,10 +60,11 @@ def test_feature_flags():
             ),
         ),
         ("w/o async mmap", FeatureFlags(use_async_mmap=False)),
+        ("w/o synchronized flushes", FeatureFlags(sync_flushes=True)),
         ("w/o MADV_SEQUENTIAL", FeatureFlags(use_madv_sequential=False)),
         ("w/o MADV_HUGEPAGE", FeatureFlags(use_madv_hugepage=False)),
         # ("w/o MADV_DONTNEED", FeatureFlags(use_madv_dontneed=False)),
-        ("w/o MAP_PRIVATE", FeatureFlags(use_map_private=False)),
+        # ("w/o MAP_PRIVATE", FeatureFlags(use_map_private=False)),
     ]
 
     for name, flags in flag_sets:

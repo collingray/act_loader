@@ -22,6 +22,7 @@ class MemoryMappedTensor:
         self.tensor_shape = tensor_shape
         self.tensor_size = math.prod(tensor_shape) * NP_DTYPES[dtype]().itemsize
         self.dtype = dtype
+        self.fflags = fflags
         self.max_length = length
         self.page_size = mmap.PAGESIZE * fflags.pages_per_flush
         self.size = self.max_length * self.tensor_size
@@ -92,14 +93,27 @@ class MemoryMappedTensor:
         if self.length >= self.max_length:
             raise IndexError("Memory-mapped tensor is full")
 
-        if self.unflushed + len(data) > self.page_size:
-            self.mmap.write(data[: self.page_size - self.unflushed])
-            data = data[self.page_size - self.unflushed :]
+        if self.unflushed + len(data) > self.page_size and self.fflags.sync_flushes:
+            # number of bytes to be written to fill the current page
+            rem_page_bytes = self.page_size - self.unflushed
+            # number of bytes remaining after writing `rem_page_bytes` which will fill full pages
+            full_page_bytes = (
+                (len(data) - rem_page_bytes) // self.page_size * self.page_size
+            )
+            bytes_to_write = rem_page_bytes + full_page_bytes
+
+            self.mmap.write(data[:bytes_to_write])
+            data = data[bytes_to_write:]
             self.mmap.flush()
             self.unflushed = 0
 
         self.mmap.write(data)
-        self.unflushed += len(data)
+
+        if self.fflags.sync_flushes:
+            self.unflushed += len(data)
+        else:
+            self.mmap.flush()
+
         del data
 
         # self.mmap.madvise(mmap.MADV_DONTNEED, 0, len(self.mmap))
