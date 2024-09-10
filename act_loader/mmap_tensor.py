@@ -40,8 +40,6 @@ class MemoryMappedTensor:
                 self.file.fileno(),
                 length=0,
                 offset=0,
-                # flags=fflags.mmap_flags,
-                # prot=mmap.PROT_WRITE,
                 access=mmap.ACCESS_WRITE,
             )
         else:
@@ -49,8 +47,6 @@ class MemoryMappedTensor:
                 self.file.fileno(),
                 length=0,
                 offset=0,
-                # flags=fflags.mmap_flags,
-                # prot=mmap.PROT_WRITE,
                 access=mmap.ACCESS_WRITE,
             )
 
@@ -114,26 +110,14 @@ class MemoryMappedTensor:
         else:
             self.mmap.flush()
 
+        if self.fflags.use_madv_dontneed:
+            self.mmap.madvise(
+                mmap.MADV_DONTNEED,
+                0,
+                (self.length * self.tensor_size) - self.unflushed,
+            )
+
         del data
-
-        # self.mmap.madvise(mmap.MADV_DONTNEED, 0, len(self.mmap))
-
-        # MAdvise DONTNEED on all pages just written
-        # start = self.pointer * self.tensor_size
-        # start_page = start // self.page_size
-        # end_page = (start + len(bytes)) // self.page_size
-        #
-        # if start_page != end_page:  # Only call if we crossed a page boundary
-        # self.mmap.madvise(
-        #     mmap.MADV_DONTNEED,
-        #     0,
-        #     (len(self.mmap) // self.page_size) * self.page_size,
-        # )
-
-        # Increment the write head
-        # self.pointer += tensor.shape[0]
-
-        # self.data._mmap.madvise(mmap.MADV_DONTNEED, 0, end * self.data.itemsize)
 
     def get_data(self):
         # Ensure all data is written to disk

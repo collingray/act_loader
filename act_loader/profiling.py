@@ -50,21 +50,21 @@ def test_feature_flags():
 
     flag_sets = [
         ("all flags", FeatureFlags()),
+        ("w/o async mmap", FeatureFlags(use_async_mmap=False)),
+        ("w/o MADV_SEQUENTIAL", FeatureFlags(use_madv_sequential=False)),
+        ("w/o MADV_DONTNEED", FeatureFlags(use_madv_dontneed=False)),
+        ("w/o MADV_HUGEPAGE", FeatureFlags(use_madv_hugepage=False)),
+        ("w/o synchronized flushes", FeatureFlags(sync_flushes=True)),
         (
             "no flags",
             FeatureFlags(
                 use_async_mmap=False,
                 use_madv_sequential=False,
+                use_madv_dontneed=False,
                 use_madv_hugepage=False,
-                use_map_private=False,
+                sync_flushes=False,
             ),
         ),
-        ("w/o async mmap", FeatureFlags(use_async_mmap=False)),
-        ("w/o synchronized flushes", FeatureFlags(sync_flushes=True)),
-        ("w/o MADV_SEQUENTIAL", FeatureFlags(use_madv_sequential=False)),
-        ("w/o MADV_HUGEPAGE", FeatureFlags(use_madv_hugepage=False)),
-        # ("w/o MADV_DONTNEED", FeatureFlags(use_madv_dontneed=False)),
-        # ("w/o MAP_PRIVATE", FeatureFlags(use_map_private=False)),
     ]
 
     for name, flags in flag_sets:
