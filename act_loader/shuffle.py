@@ -172,7 +172,8 @@ def shuffle_acts(
                     )
                     start = time_ns()
 
-                    bins[rng.integers(k)].append(acts)
+                    for i in range(acts.shape[0]):
+                        bins[rng.integers(k)].append(acts[i])
 
                     end = time_ns()
                     timing_data["bin_append"] = np.append(
@@ -184,7 +185,8 @@ def shuffle_acts(
                     if t + act_batch >= n_tokens:
                         acts = acts[: n_tokens - t]
 
-                    bins[rng.integers(k)].append(acts)
+                    for i in range(acts.shape[0]):
+                        bins[rng.integers(k)].append(acts[i])
 
             if fflags.log_final_bin_shapes:
                 for bin in bins:
