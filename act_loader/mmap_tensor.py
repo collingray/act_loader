@@ -113,8 +113,8 @@ class MemoryMappedTensor:
         if self.fflags.use_madv_dontneed:
             self.mmap.madvise(
                 mmap.MADV_DONTNEED,
-                start=0,
-                length=(self.length * self.tensor_size) - self.unflushed,
+                0,
+                (self.length * self.tensor_size) - self.unflushed,
             )
 
         del data

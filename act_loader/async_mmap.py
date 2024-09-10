@@ -53,8 +53,8 @@ class async_mmap:
     def tell(self):
         return self.mmap.tell()
 
-    def madvise(self, option, **kwargs):
-        return self.mmap.madvise(option, **kwargs)
+    def madvise(self, option, *args):
+        return self.mmap.madvise(option, *args)
 
     def __getitem__(self, item):
         return self.mmap[item]
