@@ -57,6 +57,27 @@ def k_bins(n, max_mem, p_overflow=1e-12):
     return k
 
 
+def shuffle_into_bins(x, k, rng: np.random.Generator = None):
+    """
+    Randomly shuffle a tensor into `k` bins
+    :param x: A tensor of shape [n, ...]
+    :param k: The number of bins to split the tensor into
+    :param rng: A numpy random number generator
+    :return: A list of tensors, each of shape [m_i, ...], where sum(m_1, ..., m_k) == n
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    torch_rng = torch.Generator()
+    torch_rng.manual_seed(int(rng.integers(0, 2**32 - 1)))
+
+    perm = torch.randperm(x.shape[0])
+    x = x[perm]
+    parts = rng.multinomial(x.shape[0], [1 / k] * k)
+
+    return torch.split(x, parts.tolist())
+
+
 def get_hugepage_size():
     try:
         with open("/proc/meminfo", "r") as f:

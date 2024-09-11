@@ -16,7 +16,7 @@ from transformer_lens import HookedTransformer
 
 from fflags import FeatureFlags
 from mmap_tensor import MemoryMappedTensor
-from utils import k_bins, TORCH_DTYPES, auto_device
+from utils import k_bins, TORCH_DTYPES, auto_device, shuffle_into_bins
 
 
 @torch.no_grad()
@@ -172,8 +172,8 @@ def shuffle_acts(
                     )
                     start = time_ns()
 
-                    for i in range(acts.shape[0]):
-                        bins[rng.integers(k)].append(acts[i])
+                    for i, b in enumerate(shuffle_into_bins(acts, k, rng)):
+                        bins[b].append(acts)
 
                     end = time_ns()
                     timing_data["bin_append"] = np.append(
@@ -185,8 +185,8 @@ def shuffle_acts(
                     if t + act_batch >= n_tokens:
                         acts = acts[: n_tokens - t]
 
-                    for i in range(acts.shape[0]):
-                        bins[rng.integers(k)].append(acts[i])
+                    for i, b in enumerate(shuffle_into_bins(acts, k, rng)):
+                        bins[b].append(acts)
 
             if fflags.log_final_bin_shapes:
                 for bin in bins:
