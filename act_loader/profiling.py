@@ -89,36 +89,40 @@ def test_feature_flags():
 
 def test_activation_batch():
     model_batch = 48
-    act_batch = 512
 
-    gen = tl_generate_acts(
-        model_name,
-        dataset,
-        layers,
-        sites,
-        model_batch,
-        act_batch,
-        dtype,
-        device,
-    )
+    for act_batch in [256, 512, 1024, 2048]:
+        gen = tl_generate_acts(
+            model_name,
+            dataset,
+            layers,
+            sites,
+            model_batch,
+            act_batch,
+            dtype,
+            device,
+        )
 
-    shuffle_acts(
-        gen,
-        n_tokens=n_tokens,
-        max_bytes=max_bytes,
-        layers=layers,
-        sites=sites,
-        n_dim=d_mlp,
-        act_batch=act_batch,
-        output_dir=output_dir,
-        p_overflow=p_overflow,
-        dtype=dtype,
-    )
+        print(f"Testing activation batch of {act_batch}...")
+        start = time()
+        shuffle_acts(
+            gen,
+            n_tokens=n_tokens,
+            max_bytes=max_bytes,
+            layers=layers,
+            sites=sites,
+            n_dim=d_mlp,
+            act_batch=act_batch,
+            output_dir=output_dir,
+            p_overflow=p_overflow,
+            dtype=dtype,
+        )
+        end = time()
+        print(f"{act_batch}: {end - start:.2f}s")
 
 
 if __name__ == "__main__":
     print("Testing feature flags...")
     test_feature_flags()
 
-    # print("Testing activation batch sizes...")
-    # test_activation_batch()
+    print("Testing activation batch sizes...")
+    test_activation_batch()
