@@ -124,6 +124,9 @@ class MemoryMappedTensor:
         if self.unflushed > 0:
             self.mmap.flush()
 
+        if self.fflags.use_madv_sequential:
+            self.mmap.madvise(mmap.MADV_SEQUENTIAL)
+
         return (
             np.frombuffer(
                 self.mmap[: self.mmap.tell()],

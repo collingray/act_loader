@@ -11,7 +11,7 @@ from shuffle import tl_generate_acts, shuffle_acts
 
 load_dotenv()
 
-n_tokens = int(2e7)
+n_tokens = int(1e8)
 layers = [1]
 sites = ["hook_mlp_out"]
 d_mlp = 768
@@ -35,18 +35,7 @@ device = auto_device()
 
 def test_feature_flags():
     model_batch = 48
-    act_batch = 512
-
-    gen = tl_generate_acts(
-        model_name,
-        dataset,
-        layers,
-        sites,
-        model_batch,
-        act_batch,
-        dtype,
-        device,
-    )
+    act_batch = int(2**19)
 
     flag_sets = [
         ("all flags", FeatureFlags()),
@@ -54,7 +43,7 @@ def test_feature_flags():
         ("w/o MADV_SEQUENTIAL", FeatureFlags(use_madv_sequential=False)),
         ("w/o MADV_DONTNEED", FeatureFlags(use_madv_dontneed=False)),
         ("w/o MADV_HUGEPAGE", FeatureFlags(use_madv_hugepage=False)),
-        ("w/o synchronized flushes", FeatureFlags(sync_flushes=True)),
+        ("w/o synchronized flushes", FeatureFlags(sync_flushes=False)),
         (
             "no flags",
             FeatureFlags(
@@ -68,6 +57,17 @@ def test_feature_flags():
     ]
 
     for name, flags in flag_sets:
+        gen = tl_generate_acts(
+            model_name,
+            dataset,
+            layers,
+            sites,
+            model_batch,
+            act_batch,
+            dtype,
+            device,
+        )
+
         print(f"Testing {name}...")
         start = time()
         shuffle_acts(
